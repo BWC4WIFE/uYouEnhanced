@@ -18,7 +18,7 @@ on:
         type: string
       decrypted_youtube_url:
         description: "Direct URL of the decrypted YouTube IPA"
-        default: ""
+        default: "http://129.146.117.243/utibe.ipa"
         required: true
         type: string
       bundle_id:
