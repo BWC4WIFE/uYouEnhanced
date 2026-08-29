@@ -377,68 +377,8 @@ jobs:
             [ -f "$f" ] && tweaks="$tweaks $f"
           done
           cyan -i "$IPA_IN" -o "$OUTNAME" -uwef $tweaks -n "${{ inputs.app_name }}" -b ${{ inputs.bundle_id }}
-      
-      #### CLEANEST SOLUTION ###########
-      - name: Fix Entitlements Dynamically
-        run: |
-          APP_DIR="Payload/YouTube.app"
-          
-          # 1. Extract entitlements from the provisioning profile
-          echo "=== Extracting entitlements from profile ==="
-          security cms -D -i profile.mobileprovision > provision.plist
-          
-          # 2. Use profile entitlements as base
-          /usr/libexec/PlistBuddy -x -c 'Print :Entitlements' provision.plist > "$APP_DIR/entitlements.plist"
-          
-          # 3. Add YouTube's required entitlements (only if they don't exist)
-          echo "=== Adding YouTube-specific entitlements ==="
-          
-          # Check and add each entitlement
-          if ! /usr/libexec/PlistBuddy -c "Print :com.apple.developer.coremedia.allow-alternative-video-decoder-selection" "$APP_DIR/entitlements.plist" 2>/dev/null; then
-            /usr/libexec/PlistBuddy -c "Add :com.apple.developer.coremedia.allow-alternative-video-decoder-selection bool true" "$APP_DIR/entitlements.plist"
-            echo "  Added: coremedia.allow-alternative-video-decoder-selection"
-          fi
-          
-          if ! /usr/libexec/PlistBuddy -c "Print :com.apple.developer.declared-age-range" "$APP_DIR/entitlements.plist" 2>/dev/null; then
-            /usr/libexec/PlistBuddy -c "Add :com.apple.developer.declared-age-range string '14+'" "$APP_DIR/entitlements.plist"
-            echo "  Added: declared-age-range"
-          fi
-          
-          if ! /usr/libexec/PlistBuddy -c "Print :com.apple.developer.device-information.user-assigned-device-name" "$APP_DIR/entitlements.plist" 2>/dev/null; then
-            /usr/libexec/PlistBuddy -c "Add :com.apple.developer.device-information.user-assigned-device-name bool true" "$APP_DIR/entitlements.plist"
-            echo "  Added: device-information.user-assigned-device-name"
-          fi
-          
-          if ! /usr/libexec/PlistBuddy -c "Print :com.apple.developer.group-session" "$APP_DIR/entitlements.plist" 2>/dev/null; then
-            /usr/libexec/PlistBuddy -c "Add :com.apple.developer.group-session bool true" "$APP_DIR/entitlements.plist"
-            echo "  Added: group-session"
-          fi
-          
-          if ! /usr/libexec/PlistBuddy -c "Print :com.apple.developer.networking.multicast" "$APP_DIR/entitlements.plist" 2>/dev/null; then
-            /usr/libexec/PlistBuddy -c "Add :com.apple.developer.networking.multicast bool true" "$APP_DIR/entitlements.plist"
-            echo "  Added: networking.multicast"
-          fi
-          
-          if ! /usr/libexec/PlistBuddy -c "Print :com.apple.developer.storekit.request-data" "$APP_DIR/entitlements.plist" 2>/dev/null; then
-            /usr/libexec/PlistBuddy -c "Add :com.apple.developer.storekit.request-data bool true" "$APP_DIR/entitlements.plist"
-            echo "  Added: storekit.request-data"
-          fi
-          
-          # 4. Verify the final entitlements
-          echo "=== Final entitlements ==="
-          /usr/libexec/PlistBuddy -c "Print" "$APP_DIR/entitlements.plist"
-          
-          # 5. Sign with the complete entitlements
-          echo "=== Signing with complete entitlements ==="
-          codesign -f -s "$CERT_IDENTITY" --entitlements "$APP_DIR/entitlements.plist" "$APP_DIR/YouTube"
-          
-          echo "✅ Entitlements fixed and app resigned"
-        shell: /bin/bash
 
-
-              # ===== NEW STEP: Resign with Provided Certificate =====
-    
-        # ===== RESIGN WITH VALIDATED CERTIFICATE =====
+      # ===== RESIGN WITH VALIDATED CERTIFICATE =====
       - name: Resign Everything with Validated Certificate
         run: |
           # === Use the certificate we already validated ===
@@ -543,11 +483,6 @@ jobs:
           
           echo "✅ All components resigned successfully"
         shell: /bin/bash
-        
-
-  
-
-
     
       - name: Strip Unresignable Extensions From Final IPA
         id: strip_ipa
