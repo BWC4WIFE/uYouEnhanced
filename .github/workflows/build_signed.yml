@@ -20,12 +20,14 @@ on:
         default: "https://www.dropbox.com/scl/fi/j8gc6moqvudfo8xetcf2o/YouTube.ipa?rlkey=h452vc9ky73935kcwqlozjxv5&dl=0"
         required: true
         type: string
-      mobileprovision_url:
+      mobileprovision_url: 
         description: "Direct URL to the .mobileprovision file"
+        default: "https://www.dropbox.com/scl/fi/n07qbdavurn0kdl08r2a5/791c7a00_dist.mobileprovision?rlkey=lztyc8ewii1gpzz6opviidsa2&dl=1"
         required: true
         type: string
       p12_url:
         description: "Direct URL to the .p12 certificate file"
+        default: "https://www.dropbox.com/scl/fi/i4537z6ac778ticxzjshw/791c7a00_dist.p12?rlkey=acn9y8vpy7h03lpggleu0oxwl&dl=1"
         required: true
         type: string
       p12_password:
@@ -89,6 +91,41 @@ jobs:
           path: main
           ref: ${{ github.event.inputs.commit_id || github.ref }}
           submodules: recursive
+
+      - name: Download and Verify Certs
+        run: |
+          # Download with dl=1 for raw file
+          wget -q "${{ inputs.p12_url }}" -O cert.p12
+          wget -q "${{ inputs.mobileprovision_url }}" -O profile.mobileprovision
+          echo "${{ inputs.p12_password }}" > cert_password.txt
+          
+          
+          # Verify files are not HTML
+          echo "=== Verifying certificate ==="
+          file cert.p12
+          if file cert.p12 | grep -q "HTML"; then
+            echo "❌ Certificate file is HTML (corrupted download)"
+            exit 1
+          fi
+          
+          # Verify .p12 is valid (without password first)
+          openssl pkcs12 -in cert.p12 -nokeys -clcerts -passin pass:flarestore 2>&1 | head -10 || true
+          
+          echo "=== Verifying provisioning profile ==="
+          file profile.mobileprovision
+          if file profile.mobileprovision | grep -q "HTML"; then
+            echo "❌ Profile file is HTML (corrupted download)"
+            exit 1
+          fi
+          
+          # Test profile extraction
+          security cms -D -i profile.mobileprovision > provision.plist 2>/dev/null
+          if [ ! -s provision.plist ]; then
+            echo "❌ Failed to extract provisioning profile"
+            exit 1
+          fi
+          
+          echo "✅ All files verified successfully"
 
       - name: Install Dependencies
         run: |
