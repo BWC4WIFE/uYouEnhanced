@@ -317,7 +317,7 @@ jobs:
           cyan -i "$IPA_IN" -o "$OUTNAME" -uwef $tweaks -n "${{ inputs.app_name }}" -b ${{ inputs.bundle_id }}
 
       - name: Resign Everything with Validated Certificate
-        shell: /bin/bash
+        shell: bash
         run: |
           cp cert_cache/cert.p12 .
           cp cert_cache/profile.mobileprovision .
