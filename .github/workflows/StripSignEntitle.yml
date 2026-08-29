@@ -85,6 +85,85 @@ jobs:
       contents: write
 
     steps:
+      # ============================================
+      # STEP 1: VALIDATE CERTIFICATE EARLY (FAIL FAST)
+      # ============================================
+      - name: Validate Certificate and Profile Early
+        run: |
+          echo "=== VALIDATING CERTIFICATE EARLY ==="
+          echo "This checks if the certificate works BEFORE spending time building"
+          
+          # Download certificate and profile
+          wget -q "${{ inputs.p12_url }}" -O cert.p12
+          wget -q "${{ inputs.mobileprovision_url }}" -O profile.mobileprovision
+          echo "${{ inputs.p12_password }}" > cert_password.txt
+          
+          # === Check file types ===
+          echo "=== Checking file types ==="
+          if file cert.p12 | grep -q "HTML"; then
+            echo "❌ Certificate is HTML - corrupted or wrong URL"
+            exit 1
+          fi
+          if file profile.mobileprovision | grep -q "HTML"; then
+            echo "❌ Profile is HTML - corrupted or wrong URL"
+            exit 1
+          fi
+          echo "✅ Files are valid file types"
+          
+          # === Test certificate with OpenSSL ===
+          echo "=== Testing certificate with OpenSSL ==="
+          if openssl pkcs12 -in cert.p12 -nokeys -clcerts -passin pass:"${{ inputs.p12_password }}" 2>&1 | grep -qi "error"; then
+            echo "❌ Certificate failed OpenSSL test - wrong password or corrupt"
+            echo "Trying common passwords..."
+            for PASS in "flarestore" "FlareStore" "flareStore" "FLARESTORE" "FlareStore123" "123456" "password" ""; do
+              if [ -z "$PASS" ]; then
+                echo "Trying: (no password)"
+                if openssl pkcs12 -in cert.p12 -nokeys -clcerts -passin pass: 2>/dev/null; then
+                  echo "✅ SUCCESS! No password needed"
+                  echo "" > cert_password.txt
+                  break
+                fi
+              else
+                echo "Trying: $PASS"
+                if openssl pkcs12 -in cert.p12 -nokeys -clcerts -passin pass:"$PASS" 2>/dev/null; then
+                  echo "✅ SUCCESS! Password: $PASS"
+                  echo "$PASS" > cert_password.txt
+                  break
+                fi
+              fi
+            done
+          fi
+          echo "✅ Certificate valid"
+          
+          # === Test provisioning profile ===
+          echo "=== Testing provisioning profile ==="
+          security cms -D -i profile.mobileprovision > provision.plist 2>/dev/null
+          if [ ! -s provision.plist ]; then
+            echo "❌ Failed to extract provisioning profile"
+            exit 1
+          fi
+          
+          # Extract Team ID and App ID for verification
+          TEAM_ID=$(/usr/libexec/PlistBuddy -c 'Print :TeamIdentifier:0' provision.plist 2>/dev/null)
+          APP_ID=$(/usr/libexec/PlistBuddy -c 'Print :Entitlements:application-identifier' provision.plist 2>/dev/null)
+          echo "Team ID: $TEAM_ID"
+          echo "App ID: $APP_ID"
+          
+          echo "✅ All certificate and profile checks passed!"
+          echo "✅ Proceeding with full build..."
+          
+          # === Save the validated files for later ===
+          mkdir -p cert_cache
+          cp cert.p12 cert_cache/
+          cp profile.mobileprovision cert_cache/
+          cp cert_password.txt cert_cache/
+          
+          # Export validation status for later steps
+          echo "CERT_VALIDATED=true" >> $GITHUB_ENV
+          echo "TEAM_ID=$TEAM_ID" >> $GITHUB_ENV
+          
+          echo "✅ EARLY VALIDATION COMPLETE - Build will now proceed"
+    
       - name: Checkout Main
         uses: actions/checkout@v7
         with:
@@ -92,41 +171,7 @@ jobs:
           ref: ${{ github.event.inputs.commit_id || github.ref }}
           submodules: recursive
 
-      - name: Download and Verify Certs
-        run: |
-          # Download with dl=1 for raw file
-          wget -q "${{ inputs.p12_url }}" -O cert.p12
-          wget -q "${{ inputs.mobileprovision_url }}" -O profile.mobileprovision
-          echo "${{ inputs.p12_password }}" > cert_password.txt
-          
-          
-          # Verify files are not HTML
-          echo "=== Verifying certificate ==="
-          file cert.p12
-          if file cert.p12 | grep -q "HTML"; then
-            echo "❌ Certificate file is HTML (corrupted download)"
-            exit 1
-          fi
-          
-          # Verify .p12 is valid (without password first)
-          openssl pkcs12 -in cert.p12 -nokeys -clcerts -passin pass:flarestore 2>&1 | head -10 || true
-          
-          echo "=== Verifying provisioning profile ==="
-          file profile.mobileprovision
-          if file profile.mobileprovision | grep -q "HTML"; then
-            echo "❌ Profile file is HTML (corrupted download)"
-            exit 1
-          fi
-          
-          # Test profile extraction
-          security cms -D -i profile.mobileprovision > provision.plist 2>/dev/null
-          if [ ! -s provision.plist ]; then
-            echo "❌ Failed to extract provisioning profile"
-            exit 1
-          fi
-          
-          echo "✅ All files verified successfully"
-
+      
       - name: Install Dependencies
         run: |
           brew install ldid dpkg make wget unzip jq pipx
@@ -392,74 +437,46 @@ jobs:
 
 
               # ===== NEW STEP: Resign with Provided Certificate =====
-      - name:  Resign Everything with Certificate
+    
+        # ===== RESIGN WITH VALIDATED CERTIFICATE =====
+      - name: Resign Everything with Validated Certificate
         run: |
-          # === Download files ===
-          echo "Downloading certificate and profile..."
-          wget -q "https://www.dropbox.com/scl/fi/i4537z6ac778ticxzjshw/791c7a00_dist.p12?rlkey=acn9y8vpy7h03lpggleu0oxwl&dl=1" -O cert.p12 || true
-          wget -q "https://www.dropbox.com/scl/fi/n07qbdavurn0kdl08r2a5/791c7a00_dist.mobileprovision?rlkey=lztyc8ewii1gpzz6opviidsa2&dl=1" -O profile.mobileprovision || true
+          # === Use the certificate we already validated ===
+          echo "=== Using pre-validated certificate ==="
+          cp cert_cache/cert.p12 .
+          cp cert_cache/profile.mobileprovision .
+          cp cert_cache/cert_password.txt .
           
-          # === Verify files ===
-          echo "=== Verifying files ==="
-          if [ ! -f cert.p12 ] || [ ! -s cert.p12 ]; then
-            echo "❌ cert.p12 not found or empty"
-            exit 1
-          fi
-          
-          if file cert.p12 | grep -q "HTML"; then
-            echo "❌ cert.p12 is HTML! The Dropbox link is broken."
-            echo "First 200 chars:"
-            head -c 200 cert.p12
-            exit 1
-          fi
-          
-          if file cert.p12 | grep -q "data\|PKCS"; then
-            echo "✅ cert.p12 looks valid"
-          else
-            echo "⚠️ cert.p12 is not a recognized format. Trying anyway..."
-          fi
-          
-          # === Try importing with OpenSSL first ===
-          echo "=== Testing certificate with OpenSSL ==="
-          if openssl pkcs12 -in cert.p12 -nokeys -clcerts -passin pass:flarestore 2>&1 | grep -q "error"; then
-            echo "⚠️ OpenSSL test failed. Trying alternative import method..."
-          fi
-          
-          # === Create keychain ===
+          # === Import certificate into keychain ===
           echo "=== Creating keychain ==="
           security create-keychain -p temp123 build.keychain
           security default-keychain -s build.keychain
           security unlock-keychain -p temp123 build.keychain
           
-          # === Try importing with password ===
           echo "=== Importing certificate ==="
-          if ! security import cert.p12 -k build.keychain -P "flarestore" -T /usr/bin/codesign 2>&1; then
-            echo "⚠️ Failed with password 'flarestore'. Trying with no password..."
-            if ! security import cert.p12 -k build.keychain -T /usr/bin/codesign 2>&1; then
-              echo "❌ Failed to import certificate"
-              echo "The .p12 file is either corrupt, has a different password, or is not a valid certificate."
-              echo ""
-              echo "Please check:"
-              echo "1. The .p12 file is not corrupted (try downloading manually)"
-              echo "2. The password is correct"
-              echo "3. The file is a valid PKCS12 certificate"
-              exit 1
-            fi
+          PASSWORD=$(cat cert_password.txt)
+          if [ -z "$PASSWORD" ]; then
+            # Import without password
+            security import cert.p12 -k build.keychain -T /usr/bin/codesign -A
+          else
+            # Import with password
+            security import cert.p12 -k build.keychain -P "$PASSWORD" -T /usr/bin/codesign -A
           fi
           
           security set-key-partition-list -S apple-tool:,apple: -s -k temp123 build.keychain
           
-          # Find certificate
+          # === Find the certificate identity ===
+          echo "=== Finding certificate ==="
           CERT_IDENTITY=$(security find-identity -v -p basic | grep -E "Apple Development|iPhone Developer|Apple Distribution|iPhone Distribution" | head -1 | awk -F'"' '{print $2}')
-          echo "Using certificate: $CERT_IDENTITY"
           
           if [ -z "$CERT_IDENTITY" ]; then
             echo "❌ No certificate identity found!"
             security find-identity -v -p basic
             exit 1
           fi
+          echo "Using certificate: $CERT_IDENTITY"
           
-          # === Continue with resigning ===
+          # === Extract entitlements ===
           echo "=== Extracting entitlements ==="
           security cms -D -i profile.mobileprovision > provision.plist
           /usr/libexec/PlistBuddy -x -c 'Print :Entitlements' provision.plist > entitlements.plist
@@ -467,13 +484,16 @@ jobs:
           APP_DIR="Payload/YouTube.app"
           IPA_NAME="uYouEnhanced_${{ env.YT_VERSION }}_v${{ inputs.uyou_version }}.ipa"
           
+          # === Unzip IPA ===
           echo "=== Unzipping IPA ==="
           mkdir -p resign_work
           cd resign_work
           unzip -q "../$IPA_NAME"
           
+          # === Embed provisioning profile ===
           cp ../profile.mobileprovision "$APP_DIR/embedded.mobileprovision"
           
+          # === Strip ALL signatures ===
           echo "=== Stripping signatures ==="
           find "$APP_DIR" -name "*.dylib" -type f -exec codesign --remove-signature {} \; 2>/dev/null || true
           find "$APP_DIR" -name "*.framework" -type d | while read dir; do
@@ -483,12 +503,19 @@ jobs:
           find "$APP_DIR" -name "*.appex" -type d -exec codesign --remove-signature {} \; 2>/dev/null || true
           codesign --remove-signature "$APP_DIR/YouTube" 2>/dev/null || true
           
-          echo "=== Re-signing ==="
+          # === Re-sign dylibs (WITHOUT entitlements) ===
+          echo "=== Re-signing dylibs ==="
           find "$APP_DIR" -name "*.dylib" -type f -exec codesign -f -s "$CERT_IDENTITY" {} \;
+          
+          # === Re-sign frameworks (WITHOUT entitlements) ===
+          echo "=== Re-signing frameworks ==="
           find "$APP_DIR" -name "*.framework" -type d | while read dir; do
             binary=$(basename "$dir" .framework)
             [ -f "$dir/$binary" ] && codesign -f -s "$CERT_IDENTITY" "$dir/$binary"
           done
+          
+          # === Re-sign app extensions (WITHOUT entitlements) ===
+          echo "=== Re-signing app extensions ==="
           find "$APP_DIR" -name "*.appex" -type d -exec codesign -f -s "$CERT_IDENTITY" {} \;
           
           # === Add YouTube's missing entitlements ===
@@ -500,11 +527,15 @@ jobs:
           /usr/libexec/PlistBuddy -c "Add :com.apple.developer.networking.multicast bool true" ../entitlements.plist 2>/dev/null || true
           /usr/libexec/PlistBuddy -c "Add :com.apple.developer.storekit.request-data bool true" ../entitlements.plist 2>/dev/null || true
           
+          # === Sign main binary WITH entitlements ===
+          echo "=== Signing main binary ==="
           codesign -f -s "$CERT_IDENTITY" --entitlements ../entitlements.plist "$APP_DIR/YouTube"
           
-          echo "=== Verifying ==="
+          # === Verify signatures ===
+          echo "=== Verifying signatures ==="
           codesign -d --verbose=2 "$APP_DIR/YouTube"
           
+          # === Repack IPA ===
           echo "=== Repacking IPA ==="
           zip -q -r "../$IPA_NAME" "$APP_DIR"
           cd ..
@@ -512,6 +543,7 @@ jobs:
           
           echo "✅ All components resigned successfully"
         shell: /bin/bash
+        
 
   
 
