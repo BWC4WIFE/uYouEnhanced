@@ -1,6 +1,6 @@
 # Original idea by @ISnackable. Thanks to him for handling the hardest parts!
 # https://github.com/ISnackable/YTCubePlus/blob/main/.github/workflows/Build.yml
-name: GEMINI UPDATED __ 
+name: GeminISTriped
 
 on:
   workflow_dispatch:
