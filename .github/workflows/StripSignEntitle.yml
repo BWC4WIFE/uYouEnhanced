@@ -379,7 +379,7 @@ jobs:
           cyan -i "$IPA_IN" -o "$OUTNAME" -uwef $tweaks -n "${{ inputs.app_name }}" -b ${{ inputs.bundle_id }}
       # ===== RESIGN WITH VALIDATED CERTIFICATE =====
   
-      - name: Resign Everything with Validated Certificate
+      - name:
         env:
           CERT_VALIDATED: true
           TEAM_ID: D56Z6846H3
@@ -399,14 +399,26 @@ jobs:
           echo "=== Importing certificate ==="
           PASSWORD=$(cat cert_password.txt)
 
-          # FIX: Convert P12 to legacy format so macOS 'security' tool can read it
-          # This solves the "MAC verification failed" error
-          openssl pkcs12 -in cert.p12 -out cert_legacy.p12 -legacy -passin pass:"$PASSWORD" -passout pass:"$PASSWORD" 2>/dev/null || true
+          # THE FIX: macOS 'security' tool cannot read modern P12 encryption.
+          # We must unpack the P12 and repack it using Legacy PBE-SHA1-3DES encryption.
+          echo "Converting certificate to Apple-compatible legacy format..."
           
-          if [ -f "cert_legacy.p12" ]; then
-            CERT_FILE="cert_legacy.p12"
+          # 1. Unpack P12 to a temporary PEM file
+          openssl pkcs12 -in cert.p12 -out temp.pem -nodes -passin pass:"$PASSWORD" 2>/dev/null
+          
+          # 2. Repack PEM to P12 using legacy encryption algorithms
+          openssl pkcs12 -export -in temp.pem -out cert_fixed.p12 -passout pass:"$PASSWORD" -keypbe PBE-SHA1-3DES -certpbe PBE-SHA1-3DES 2>/dev/null
+          
+          # Cleanup temp file
+          rm -f temp.pem
+
+          # Determine which file to use (use fixed one if it exists and isn't empty)
+          if [ -s "cert_fixed.p12" ]; then
+            CERT_FILE="cert_fixed.p12"
+            echo "✅ Successfully converted to legacy format."
           else
             CERT_FILE="cert.p12"
+            echo "⚠️ Conversion failed, attempting with original cert.p12"
           fi
 
           if [ -z "$PASSWORD" ]; then
