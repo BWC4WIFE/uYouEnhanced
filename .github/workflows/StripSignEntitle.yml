@@ -1,6 +1,6 @@
 # Original idea by @ISnackable. Thanks to him for handling the hardest parts!
 # https://github.com/ISnackable/YTCubePlus/blob/main/.github/workflows/Build.yml
-name: Sign Stripped Build and Release 
+name: ENTITLE GONE Sign Stripped Build and Release 
 
 on:
   workflow_dispatch:
