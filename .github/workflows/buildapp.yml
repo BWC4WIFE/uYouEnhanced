@@ -18,7 +18,7 @@ on:
         type: string
       decrypted_youtube_url:
         description: "Direct URL of the decrypted YouTube IPA"
-        default: "http://129.146.117.243/utibe.ipa"
+        default: "http://129.146.117.243/YouTube.ipa"
         required: true
         type: string
       bundle_id:
@@ -53,7 +53,7 @@ on:
         type: boolean
       sponsorblock:
         description: "Include iSponsorBlock (KEEP IT DISABLED - may crash the app.)"
-        default: false
+        default: true
         required: false
         type: boolean
 
