@@ -158,14 +158,21 @@ jobs:
           echo "Provision App ID: $PROV_APP_ID"
 
           # Check Expiration
+          # Check Expiration
           if [[ "$EXPIRATION" != "Unknown" ]]; then
-            EXP_EPOCH=$(date -j -f "%Y-%m-%dT%H:%M:%SZ" "$EXPIRATION" "+%s" 2>/dev/null || date -d "$EXPIRATION" "+%s" 2>/dev/null)
-            NOW_EPOCH=$(date "+%s")
-            if [ "$EXP_EPOCH" -lt "$NOW_EPOCH" ]; then
-              echo "❌ PROVISIONING PROFILE EXPIRED: $EXPIRATION"
-              exit 1
+            # PlistBuddy format: "Sun May 23 07:51:44 UTC 2027"
+            # BSD date format: "%a %b %d %H:%M:%S %Z %Y"
+            EXP_EPOCH=$(date -j -f "%a %b %d %H:%M:%S %Z %Y" "$EXPIRATION" "+%s" 2>/dev/null)
+            if [ -z "$EXP_EPOCH" ]; then
+              echo "⚠️ Could not parse expiration date: $EXPIRATION"
+            else
+              NOW_EPOCH=$(date "+%s")
+              if [ "$EXP_EPOCH" -lt "$NOW_EPOCH" ]; then
+                echo "❌ PROVISIONING PROFILE EXPIRED: $EXPIRATION"
+                exit 1
+              fi
+              echo "✅ Profile is valid (expires $EXPIRATION)"
             fi
-            echo "✅ Profile is valid (expires $EXPIRATION)"
           fi
 
           
