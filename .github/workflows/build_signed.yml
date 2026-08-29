@@ -296,12 +296,14 @@ jobs:
           done
           cyan -i "$IPA_IN" -o "$OUTNAME" -uwef $tweaks -n "${{ inputs.app_name }}" -b ${{ inputs.bundle_id }}
 
-      # ===== NEW STEP: Resign with Development Certificate =====
-      - name: Resign Everything with Development Certificate
+
+              # ===== NEW STEP: Resign with Provided Certificate =====
+      - name: Resign Everything with Provided Certificate
         run: |
-          # Setup certificate from GitHub Secrets
-          echo "${{ secrets.DEVELOPMENT_CERT_P12 }}" | base64 --decode > cert.p12
-          echo "${{ secrets.DEVELOPMENT_CERT_PASSWORD }}" > cert_password.txt
+          # Download certificate and provisioning profile from provided URLs
+          wget -q "${{ inputs.p12_url }}" -O cert.p12
+          wget -q "${{ inputs.mobileprovision_url }}" -O profile.mobileprovision
+          echo "${{ inputs.p12_password }}" > cert_password.txt
           
           # Create temporary keychain
           security create-keychain -p temp123 build.keychain
@@ -310,42 +312,14 @@ jobs:
           security import cert.p12 -k build.keychain -P "$(cat cert_password.txt)" -T /usr/bin/codesign
           security set-key-partition-list -S apple-tool:,apple: -s -k temp123 build.keychain
           
-          # Find certificate identity
-          CERT_IDENTITY=$(security find-identity -v -p basic | grep "Apple Development" | head -1 | awk -F'"' '{print $2}')
-          if [ -z "$CERT_IDENTITY" ]; then
-            CERT_IDENTITY=$(security find-identity -v -p basic | grep "iPhone Developer" | head -1 | awk -F'"' '{print $2}')
-          fi
+          # Find certificate identity (supports Development and Distribution)
+          CERT_IDENTITY=$(security find-identity -v -p basic | grep -E "Apple Development|iPhone Developer|Apple Distribution|iPhone Distribution" | head -1 | awk -F'"' '{print $2}')
           echo "Using certificate: $CERT_IDENTITY"
           
-          # Create entitlements file with ALL required entitlements
-          cat > entitlements.plist << 'EOF'
-          <?xml version="1.0" encoding="UTF-8"?>
-          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-          <plist version="1.0">
-          <dict>
-              <!-- YouTube's required entitlements -->
-              <key>com.apple.developer.coremedia.allow-alternative-video-decoder-selection</key>
-              <true/>
-              <key>com.apple.developer.declared-age-range</key>
-              <string>14+</string>
-              <key>com.apple.developer.device-information.user-assigned-device-name</key>
-              <true/>
-              <key>com.apple.developer.group-session</key>
-              <true/>
-              <key>com.apple.developer.networking.multicast</key>
-              <true/>
-              <key>com.apple.developer.storekit.request-data</key>
-              <true/>
-              <!-- Your app identifier -->
-              <key>application-identifier</key>
-              <string>${{ secrets.APP_ID_PREFIX }}.com.google.ios.youtube</string>
-              <key>keychain-access-groups</key>
-              <array>
-                  <string>${{ secrets.APP_ID_PREFIX }}.*</string>
-              </array>
-          </dict>
-          </plist>
-          EOF
+          # Extract entitlements directly from the downloaded mobileprovision file
+          echo "=== Extracting entitlements from provisioning profile ==="
+          security cms -D -i profile.mobileprovision > provision.plist
+          /usr/libexec/PlistBuddy -x -c 'Print :Entitlements' provision.plist > entitlements.plist
           
           # Set app directory
           APP_DIR="Payload/YouTube.app"
@@ -357,35 +331,33 @@ jobs:
           cd resign_work
           unzip -q "../$IPA_NAME"
           
+          # Embed the provisioning profile into the payload
+          cp ../profile.mobileprovision "$APP_DIR/embedded.mobileprovision"
+          
           # Strip ALL existing signatures
           echo "=== Stripping all signatures ==="
           find "$APP_DIR" -name "*.dylib" -type f | while read -r file; do
-            echo "  Stripping: $(basename "$file")"
             codesign --remove-signature "$file" 2>/dev/null || true
           done
           
           find "$APP_DIR" -name "*.framework" -type d | while read -r dir; do
             binary=$(basename "$dir" .framework)
             if [ -f "$dir/$binary" ]; then
-              echo "  Stripping: $binary"
               codesign --remove-signature "$dir/$binary" 2>/dev/null || true
             fi
           done
           
           find "$APP_DIR" -name "*.appex" -type d | while read -r dir; do
-            echo "  Stripping: $(basename "$dir")"
             codesign --remove-signature "$dir" 2>/dev/null || true
           done
           
-          echo "  Stripping: YouTube main binary"
           codesign --remove-signature "$APP_DIR/YouTube" 2>/dev/null || true
           
-          # Re-sign EVERYTHING with your development certificate
+          # Re-sign EVERYTHING with the provided certificate
           echo "=== Re-signing all components ==="
           
           # Sign dylibs (WITHOUT entitlements)
           find "$APP_DIR" -name "*.dylib" -type f | while read -r file; do
-            echo "  Signing: $(basename "$file")"
             codesign -f -s "$CERT_IDENTITY" "$file"
           done
           
@@ -393,19 +365,17 @@ jobs:
           find "$APP_DIR" -name "*.framework" -type d | while read -r dir; do
             binary=$(basename "$dir" .framework)
             if [ -f "$dir/$binary" ]; then
-              echo "  Signing: $binary"
               codesign -f -s "$CERT_IDENTITY" "$dir/$binary"
             fi
           done
           
           # Sign app extensions (WITHOUT entitlements)
           find "$APP_DIR" -name "*.appex" -type d | while read -r dir; do
-            echo "  Signing: $(basename "$dir")"
             codesign -f -s "$CERT_IDENTITY" "$dir"
           done
           
-          # Sign main binary WITH entitlements
-          echo "  Signing: YouTube (with entitlements)"
+          # Sign main binary WITH dynamically extracted entitlements
+          echo "  Signing: YouTube (with dynamically extracted entitlements)"
           codesign -f -s "$CERT_IDENTITY" --entitlements ../entitlements.plist "$APP_DIR/YouTube"
           
           # Verify signatures
@@ -418,9 +388,11 @@ jobs:
           cd ..
           rm -rf resign_work
           
-          echo "✓ All components resigned successfully with Development Certificate"
+          echo "✓ All components resigned successfully with provided Certificate and Profile"
+  
 
-      
+
+    
       - name: Strip Unresignable Extensions From Final IPA
         id: strip_ipa
         run: |
