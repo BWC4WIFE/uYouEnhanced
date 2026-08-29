@@ -415,8 +415,9 @@ jobs:
 
           if [ -s "cert_fixed.p12" ]; then
             echo "✅ Certificate converted to password-less format."
-            # Import without password flag since we stripped it
-            security import cert_fixed.p12 -k build.keychain -T /usr/bin/codesign -A
+            # Tell macOS the password is empty so it doesn't hang waiting for user input
+            security import cert_fixed.p12 -k build.keychain -P "" -T /usr/bin/codesign -A
+          
           else
             echo "❌ Conversion failed, attempting original"
             security import cert.p12 -k build.keychain -P "$PASSWORD" -T /usr/bin/codesign -A
