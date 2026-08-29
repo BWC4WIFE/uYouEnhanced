@@ -1,4 +1,5 @@
 # Original idea by @ISnackable. Thanks to him for handling the hardest parts!
+#WORKING
 # https://github.com/ISnackable/YTCubePlus/blob/main/.github/workflows/Build.yml
 name:  GONE Sign Stripped Build and Release 
 
@@ -385,7 +386,7 @@ jobs:
       - name: Resign Everything with Validated Certificate
         env:
           CERT_VALIDATED: true
-          TEAM_ID: D56Z6846H3
+          
         run: |
           # === Use the certificate we already validated ===
           echo "=== Using pre-validated certificate ==="
