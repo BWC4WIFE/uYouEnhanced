@@ -378,7 +378,7 @@ jobs:
           done
           cyan -i "$IPA_IN" -o "$OUTNAME" -uwef $tweaks -n "${{ inputs.app_name }}" -b ${{ inputs.bundle_id }}
       # ===== RESIGN WITH VALIDATED CERTIFICATE =====
-   
+  
       - name: Resign Everything with Validated Certificate
         env:
           CERT_VALIDATED: true
@@ -398,12 +398,23 @@ jobs:
           
           echo "=== Importing certificate ==="
           PASSWORD=$(cat cert_password.txt)
+
+          # FIX: Convert P12 to legacy format so macOS 'security' tool can read it
+          # This solves the "MAC verification failed" error
+          openssl pkcs12 -in cert.p12 -out cert_legacy.p12 -legacy -passin pass:"$PASSWORD" -passout pass:"$PASSWORD" 2>/dev/null || true
+          
+          if [ -f "cert_legacy.p12" ]; then
+            CERT_FILE="cert_legacy.p12"
+          else
+            CERT_FILE="cert.p12"
+          fi
+
           if [ -z "$PASSWORD" ]; then
             # Import without password
-            security import cert.p12 -k build.keychain -T /usr/bin/codesign -A
+            security import "$CERT_FILE" -k build.keychain -T /usr/bin/codesign -A
           else
             # Import with password
-            security import cert.p12 -k build.keychain -P "$PASSWORD" -T /usr/bin/codesign -A
+            security import "$CERT_FILE" -k build.keychain -P "$PASSWORD" -T /usr/bin/codesign -A
           fi
           
           security set-key-partition-list -S apple-tool:,apple: -s -k temp123 build.keychain
