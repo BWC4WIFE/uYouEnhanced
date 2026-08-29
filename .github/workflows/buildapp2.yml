@@ -291,13 +291,31 @@ jobs:
           echo "Normalization complete."
         shell: bash
 
-      - name: Inject Tweaks Into IPA
+      - name: Inject Tweaks Into IPA - Strip ALL Entitlements
         run: |
           IPA_IN="main/packages/${{ steps.build_package.outputs.package }}"
           OUTNAME="uYouEnhanced_${{ env.YT_VERSION }}_v${{ inputs.uyou_version }}.ipa"
           tweaks="OpenYouTubeSafariExtension.appex"
           for f in main/packages/*.deb; do
             [ -f "$f" ] && tweaks="$tweaks $f"
+          done
+
+          # === FIX: Strip entitlements from all dylibs ===
+          APP_DIR="main/Payload/YouTube.app"
+          echo "Fixing code signatures on all dylibs..."
+          find "$APP_DIR" -name "*.dylib" -type f | while read -r dylib; do
+              echo "  Stripping: $(basename "$dylib")"
+              codesign --remove-signature "$dylib" 2>/dev/null || true
+              codesign -f -s - "$dylib" 2>/dev/null || true
+          done
+          
+          find "$APP_DIR" -name "*.framework" -type d | while read -r framework; do
+              binary=$(basename "$framework" .framework)
+              if [ -f "$framework/$binary" ]; then
+                  echo "  Stripping: $framework/$binary"
+                  codesign --remove-signature "$framework/$binary" 2>/dev/null || true
+                  codesign -f -s - "$framework/$binary" 2>/dev/null || true
+              fi
           done
           cyan -i "$IPA_IN" -o "$OUTNAME" -uwef $tweaks -n "${{ inputs.app_name }}" -b ${{ inputs.bundle_id }}
 
