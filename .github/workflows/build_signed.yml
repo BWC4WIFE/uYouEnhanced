@@ -406,9 +406,7 @@ jobs:
           
           echo "✓ All components resigned successfully with Development Certificate"
 
-      - name: Strip Unresignable Extensions From Final IPA
-        id: strip_ipa
-        run: |
+      
       - name: Strip Unresignable Extensions From Final IPA
         id: strip_ipa
         run: |
