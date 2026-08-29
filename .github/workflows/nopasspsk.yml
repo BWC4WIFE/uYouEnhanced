@@ -1,7 +1,6 @@
-#GLM FIX OLLAMA
 # Original idea by @ISnackable. Thanks to him for handling the hardest parts!
 # https://github.com/ISnackable/YTCubePlus/blob/main/.github/workflows/Build.yml
-name: GLM- NO PASS PSK
+name: GONE Sign Stripped Build and Release
 
 on:
   workflow_dispatch:
@@ -21,7 +20,7 @@ on:
         default: "https://www.dropbox.com/scl/fi/j8gc6moqvudfo8xetcf2o/YouTube.ipa?rlkey=h452vc9ky73935kcwqlozjxv5&dl=0"
         required: true
         type: string
-      mobileprovision_url: 
+      mobileprovision_url:
         description: "Direct URL to the .mobileprovision file"
         default: "https://flarestore.vip/api/cert/8e9160aa-414/provision/0?udid=00008150-0004056C0200401C"
         required: true
@@ -71,9 +70,6 @@ on:
         required: false
         type: boolean
 
-
-
-
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
@@ -94,12 +90,12 @@ jobs:
         run: |
           set -euo pipefail
           echo "=== VALIDATING CERTIFICATE EARLY ==="
-          
+
           # 1. Download files
           echo "Downloading certificate and profile..."
           wget -q "${{ inputs.p12_url }}" -O cert.p12
           wget -q "${{ inputs.mobileprovision_url }}" -O profile.mobileprovision
-          
+
           # 2. Basic File Integrity Checks
           echo "=== Checking file types ==="
           if file cert.p12 | grep -qi "html\|text\|xml"; then
@@ -114,7 +110,7 @@ jobs:
             exit 1
           fi
           echo "✅ Files are valid binary types"
-          
+
           # 3. Provisioning Profile Validation
           echo "=== Validating Provisioning Profile ==="
           security cms -D -i profile.mobileprovision > provision.plist 2>/dev/null
@@ -122,17 +118,17 @@ jobs:
             echo "❌ Failed to parse provisioning profile (cms -D failed). Is it a valid .mobileprovision?"
             exit 1
           fi
-          
+
           EXPIRATION=$(/usr/libexec/PlistBuddy -c 'Print :ExpirationDate' provision.plist 2>/dev/null || echo "Unknown")
           TEAM_ID=$(/usr/libexec/PlistBuddy -c 'Print :TeamIdentifier:0' provision.plist 2>/dev/null || echo "Unknown")
           APP_ID_PREFIX=$(/usr/libexec/PlistBuddy -c 'Print :ApplicationIdentifierPrefix:0' provision.plist 2>/dev/null || echo "")
           PROV_APP_ID=$(/usr/libexec/PlistBuddy -c 'Print :Entitlements:application-identifier' provision.plist 2>/dev/null || echo "")
-          
+
           echo "Team ID: $TEAM_ID"
           echo "App ID Prefix: $APP_ID_PREFIX"
           echo "Provision Expiration: $EXPIRATION"
           echo "Provision App ID: $PROV_APP_ID"
-          
+
           # Check expiration
           if [[ "$EXPIRATION" != "Unknown" ]]; then
             EXP_EPOCH=$(date -j -f "%Y-%m-%dT%H:%M:%SZ" "$EXPIRATION" "+%s" 2>/dev/null || date -d "$EXPIRATION" "+%s" 2>/dev/null)
@@ -143,10 +139,10 @@ jobs:
             fi
             echo "✅ Profile is valid (expires $EXPIRATION)"
           fi
-          
+
           # 4. Certificate Password Detection & Validation
           echo "=== Detecting Certificate Password ==="
-          
+
           # Helper function to test password with OpenSSL (lenient)
           test_openssl() {
             local pass="$1"
@@ -156,38 +152,38 @@ jobs:
               openssl pkcs12 -in cert.p12 -nokeys -clcerts -passin pass:"$pass" 2>/dev/null
             fi
           }
-          
+
           # Helper function to test password with macOS security (strict)
           test_security_import() {
             local pass="$1"
             local test_keychain="test_keychain_$$"
             security create-keychain -p "temp" "$test_keychain" 2>/dev/null
             security unlock-keychain -p "temp" "$test_keychain" 2>/dev/null
-            
+
             local result=0
             if [ -z "$pass" ]; then
               security import cert.p12 -k "$test_keychain" -T /usr/bin/codesign -A 2>/dev/null || result=1
             else
               security import cert.p12 -k "$test_keychain" -P "$pass" -T /usr/bin/codesign -A 2>/dev/null || result=1
             fi
-            
+
             security delete-keychain "$test_keychain" 2>/dev/null
             return $result
           }
-          
+
           # Candidate Passwords (Input first, then common defaults)
           INPUT_PASS="${{ inputs.p12_password }}"
           # Trim whitespace/newlines from input
           INPUT_PASS=$(printf '%s' "$INPUT_PASS" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
-          
+
           CANDIDATES=("$INPUT_PASS" "flarestore" "FlareStore" "flareStore" "FLARESTORE" "FlareStore123" "123456" "password" "1234" "0000" "")
-          
+
           FOUND_PASS=""
           FOUND_METHOD=""
-          
+
           for PASS in "${CANDIDATES[@]}"; do
             echo "Trying password: '${PASS:- (empty)}' ..."
-            
+
             # Test with OpenSSL first (fast)
             if test_openssl "$PASS"; then
               echo "  -> OpenSSL OK. Testing macOS security import..."
@@ -204,15 +200,21 @@ jobs:
                 if openssl pkcs12 -in cert.p12 -out "$TMP_PEM" -nodes -passin pass:"$PASS" 2>/dev/null; then
                   if openssl pkcs12 -export -in "$TMP_PEM" -out "$TMP_P12" -passout pass:"$PASS" -keypbe PBE-SHA1-3DES -certpbe PBE-SHA1-3DES 2>/dev/null; then
                     # Test converted cert
+                    local test_kc="test_kc_$$"
+                    security create-keychain -p "temp" "$test_kc" 2>/dev/null
+                    security unlock-keychain -p "temp" "$test_kc" 2>/dev/null
+                    local conv_result=0
                     if [ -z "$PASS" ]; then
-                      security import "$TMP_P12" -k "$test_keychain" -T /usr/bin/codesign -A 2>/dev/null && FOUND_METHOD="legacy_empty"
+                      security import "$TMP_P12" -k "$test_kc" -T /usr/bin/codesign -A 2>/dev/null || conv_result=1
                     else
-                      security import "$TMP_P12" -k "$test_keychain" -P "$PASS" -T /usr/bin/codesign -A 2>/dev/null && FOUND_METHOD="legacy"
+                      security import "$TMP_P12" -k "$test_kc" -P "$PASS" -T /usr/bin/codesign -A 2>/dev/null || conv_result=1
                     fi
-                    
-                    if [ -n "$FOUND_METHOD" ]; then
+                    security delete-keychain "$test_kc" 2>/dev/null
+
+                    if [ $conv_result -eq 0 ]; then
                       echo "  ✅ SUCCESS with Legacy Conversion!"
                       FOUND_PASS="$PASS"
+                      FOUND_METHOD="legacy"
                       mv "$TMP_P12" cert.p12  # Replace original with fixed version
                       break
                     fi
@@ -222,18 +224,18 @@ jobs:
               fi
             fi
           done
-          
+
           if [ -z "$FOUND_PASS" ] && [ -z "$FOUND_METHOD" ]; then
             echo "❌ ALL PASSWORD ATTEMPTS FAILED."
             echo "--- Certificate Info (OpenSSL Dump) ---"
             openssl pkcs12 -in cert.p12 -info -nokeys -passin pass: 2>&1 | head -30 || true
             exit 1
           fi
-          
+
           echo "✅ Valid Password Found: '${FOUND_PASS:- (empty)}' (Method: $FOUND_METHOD)"
           printf '%s' "$FOUND_PASS" > cert_password.txt
           echo "FOUND_METHOD=$FOUND_METHOD" >> $GITHUB_ENV
-          
+
           # 5. Verify Certificate Identity Type (Must be iOS, not Mac)
           echo "=== Verifying Certificate Type ==="
           # Import to temp keychain to inspect
@@ -245,11 +247,11 @@ jobs:
           else
             security import cert.p12 -k "$TMP_KC" -P "$FOUND_PASS" -T /usr/bin/codesign -A
           fi
-          
+
           IDENTITY=$(security find-identity -v -p codesigning "$TMP_KC" | grep -E "iPhone Developer|iPhone Distribution|Apple Development|Apple Distribution" | head -1 | sed -n 's/.*"\(.*\)".*/\1/p')
-          
+
           security delete-keychain "$TMP_KC" 2>/dev/null
-          
+
           if [ -z "$IDENTITY" ]; then
             echo "❌ Certificate imported but NO VALID iOS SIGNING IDENTITY found."
             echo "   Found identities:"
@@ -257,16 +259,16 @@ jobs:
             echo "   This cert might be a 'Mac Developer', 'Mac App Store', or 'Developer ID' cert."
             exit 1
           fi
-          
+
           echo "✅ Valid iOS Signing Identity: $IDENTITY"
           echo "CERT_IDENTITY=$IDENTITY" >> $GITHUB_ENV
-          
+
           # 6. Cache validated assets
           mkdir -p cert_cache
           cp cert.p12 cert_cache/
           cp profile.mobileprovision cert_cache/
           cp cert_password.txt cert_cache/
-          
+
           echo "CERT_VALIDATED=true" >> $GITHUB_ENV
           echo "TEAM_ID=$TEAM_ID" >> $GITHUB_ENV
           echo "=== EARLY VALIDATION PASSED ==="
@@ -278,7 +280,6 @@ jobs:
           ref: ${{ github.event.inputs.commit_id || github.ref }}
           submodules: recursive
 
-      
       - name: Install Dependencies
         run: |
           brew install ldid dpkg make wget unzip jq pipx
@@ -368,7 +369,7 @@ jobs:
           sed -i '' "s/^BUNDLE_ID .*/BUNDLE_ID = ${{ inputs.bundle_id }}/" Makefile || echo "BUNDLE_ID = ${{ inputs.bundle_id }}" >> Makefile
           sed -i '' "s/^DISPLAY_NAME .*/DISPLAY_NAME = ${{ inputs.app_name }}/" Makefile || echo "DISPLAY_NAME = ${{ inputs.app_name }}" >> Makefile
           sed -i '' "s/^export TARGET .*/export TARGET = iphone:clang:${{ inputs.sdk_version }}:16.0/" Makefile || echo "export TARGET = iphone:clang:${{ inputs.sdk_version }}:16.0" >> Makefile
-          
+
           # YTUHD flag
           if [ "${{ inputs.ytuhd }}" = "true" ]; then
             echo "YTUHD_ENABLED=1" >> Makefile
@@ -452,7 +453,7 @@ jobs:
             [ -f "$f" ] && tweaks="$tweaks $f"
           done
           cyan -i "$IPA_IN" -o "$OUTNAME" -uwef $tweaks -n "${{ inputs.app_name }}" -b ${{ inputs.bundle_id }}
-          
+
       # ===== RESIGN WITH VALIDATED CERTIFICATE (ROBUST) =====
       - name: Resign IPA with Validated Certificate
         if: env.CERT_VALIDATED == 'true'
@@ -462,54 +463,51 @@ jobs:
         run: |
           set -euo pipefail
           echo "=== RESIGNING IPA ==="
-          
+
           # 1. Restore validated assets
           cp cert_cache/cert.p12 .
           cp cert_cache/profile.mobileprovision .
           cp cert_cache/cert_password.txt .
-          
+
           PASSWORD=$(cat cert_password.txt)
           # Ensure password is raw (no trailing newline)
           PASSWORD=$(printf '%s' "$PASSWORD")
-          
+
           echo "Using Certificate Identity: $CERT_IDENTITY"
           echo "Password Length: ${#PASSWORD}"
-          
+
           # 2. Setup Keychain
           security create-keychain -p "build123" build.keychain
           security default-keychain -s build.keychain
           security unlock-keychain -p "build123" build.keychain
           security set-keychain-settings -t 3600 -l build.keychain
-          
+
           # 3. Import Certificate (Handle Legacy vs Standard)
-          # The validation step already converted cert.p12 to legacy if needed (method stored in FOUND_METHOD env var)
-          # But we re-detect here for safety.
-          
           echo "Importing certificate..."
           IMPORT_SUCCESS=0
-          
+
           # Try direct import first
           if [ -z "$PASSWORD" ]; then
             security import cert.p12 -k build.keychain -T /usr/bin/codesign -A && IMPORT_SUCCESS=1
           else
             security import cert.p12 -k build.keychain -P "$PASSWORD" -T /usr/bin/codesign -A && IMPORT_SUCCESS=1
           fi
-          
+
           # If failed, try legacy conversion on the fly
           if [ $IMPORT_SUCCESS -eq 0 ]; then
             echo "Direct import failed. Attempting legacy PBE-SHA1-3DES conversion..."
             TMP_PEM=$(mktemp)
             TMP_P12=$(mktemp)
-            
+
             if [ -z "$PASSWORD" ]; then
               openssl pkcs12 -in cert.p12 -out "$TMP_PEM" -nodes -passin pass: 2>/dev/null
             else
               openssl pkcs12 -in cert.p12 -out "$TMP_PEM" -nodes -passin pass:"$PASSWORD" 2>/dev/null
             fi
-            
+
             if [ -s "$TMP_PEM" ]; then
               openssl pkcs12 -export -in "$TMP_PEM" -out "$TMP_P12" -passout pass:"$PASSWORD" -keypbe PBE-SHA1-3DES -certpbe PBE-SHA1-3DES 2>/dev/null
-              
+
               if [ -s "$TMP_P12" ]; then
                 if [ -z "$PASSWORD" ]; then
                   security import "$TMP_P12" -k build.keychain -T /usr/bin/codesign -A && IMPORT_SUCCESS=1
@@ -521,7 +519,7 @@ jobs:
             fi
             rm -f "$TMP_PEM" "$TMP_P12"
           fi
-          
+
           if [ $IMPORT_SUCCESS -eq 0 ]; then
             echo "❌ FATAL: Certificate import failed completely."
             echo "--- Debug Info ---"
@@ -529,29 +527,29 @@ jobs:
             openssl pkcs12 -in cert.p12 -info -nokeys -passin pass:"$PASSWORD" 2>&1 | head -20
             exit 1
           fi
-          
+
           # Allow codesign access
           security set-key-partition-list -S apple-tool:,apple: -s -k "build123" build.keychain
-          
+
           # 4. Verify Identity is present
           ACTIVE_IDENTITY=$(security find-identity -v -p codesigning build.keychain | grep -E "iPhone Developer|iPhone Distribution|Apple Development|Apple Distribution" | head -1 | sed -n 's/.*"\(.*\)".*/\1/p')
-          
+
           if [ -z "$ACTIVE_IDENTITY" ]; then
             echo "❌ Identity not found in keychain after import!"
             security find-identity -v build.keychain
             exit 1
           fi
-          
+
           echo "✅ Active Signing Identity: $ACTIVE_IDENTITY"
-          
+
           # 5. Extract Entitlements
           security cms -D -i profile.mobileprovision > provision.plist
           /usr/libexec/PlistBuddy -x -c 'Print :Entitlements' provision.plist > entitlements.plist
-          
+
           # Add YouTube Required Entitlements
           PLIST_BUDDY=/usr/libexec/PlistBuddy
           add_ent() { $PLIST_BUDDY -c "Add :$1 $2 $3" entitlements.plist 2>/dev/null || $PLIST_BUDDY -c "Set :$1 $3" entitlements.plist 2>/dev/null || true; }
-          
+
           add_ent "com.apple.developer.coremedia.allow-alternative-video-decoder-selection" bool true
           add_ent "com.apple.developer.declared-age-range" string "14+"
           add_ent "com.apple.developer.device-information.user-assigned-device-name" bool true
@@ -560,46 +558,46 @@ jobs:
           add_ent "com.apple.developer.storekit.request-data" bool true
           add_ent "get-task-allow" bool false
           add_ent "application-identifier" string "${TEAM_ID}.${{ inputs.bundle_id }}"
-          
+
           # 6. Unzip, Strip, Resign
           IPA_NAME="uYouEnhanced_${{ env.YT_VERSION }}_v${{ inputs.uyou_version }}.ipa"
           APP_DIR="Payload/YouTube.app"
-          
+
           mkdir -p resign_work
           cd resign_work
           unzip -q "../$IPA_NAME"
-          
+
           # Embed Profile
           cp ../profile.mobileprovision "$APP_DIR/embedded.mobileprovision"
-          
+
           # Strip All
           echo "Stripping signatures..."
           find "$APP_DIR" -name "*.dylib" -exec codesign --remove-signature {} + 2>/dev/null || true
           find "$APP_DIR" -name "*.framework" -type d | while read d; do b=$(basename "$d" .framework); [ -f "$d/$b" ] && codesign --remove-signature "$d/$b"; done 2>/dev/null || true
           find "$APP_DIR" -name "*.appex" -type d -exec codesign --remove-signature {} + 2>/dev/null || true
           codesign --remove-signature "$APP_DIR/YouTube" 2>/dev/null || true
-          
+
           # Resign Dependencies (NO Entitlements)
           echo "Resigning dylibs/frameworks/appex..."
           find "$APP_DIR" -name "*.dylib" -exec codesign -f -s "$ACTIVE_IDENTITY" {} + 2>/dev/null || true
           find "$APP_DIR" -name "*.framework" -type d | while read d; do b=$(basename "$d" .framework); [ -f "$d/$b" ] && codesign -f -s "$ACTIVE_IDENTITY" "$d/$b"; done 2>/dev/null || true
           find "$APP_DIR" -name "*.appex" -type d -exec codesign -f -s "$ACTIVE_IDENTITY" {} + 2>/dev/null || true
-          
+
           # Resign Main Binary (WITH Entitlements)
           echo "Resigning main binary with entitlements..."
           codesign -f -s "$ACTIVE_IDENTITY" --entitlements ../entitlements.plist "$APP_DIR/YouTube"
-          
+
           # Verify
           echo "=== Verification ==="
           codesign -dvvv "$APP_DIR/YouTube" 2>&1 | grep -E "Authority|TeamIdentifier|Identifier"
           codesign --verify --deep --strict --verbose=2 "$APP_DIR/YouTube" 2>&1 | tail -5
-          
+
           # Repack
           echo "Repacking IPA..."
           zip -q -r "../$IPA_NAME" "$APP_DIR"
           cd ..
           rm -rf resign_work
-          
+
           echo "✅ RESIGN COMPLETE"
 
       - name: Strip Unresignable Extensions From Final IPA
