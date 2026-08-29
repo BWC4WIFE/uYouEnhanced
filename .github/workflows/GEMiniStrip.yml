@@ -381,8 +381,8 @@ jobs:
       
       # ===== RESIGN WITH VALIDATED CERTIFICATE =====
 
-
-- name: Resign Everything with Validated Certificate
+      
+      - name: Resign Everything with Validated Certificate
         env:
           CERT_VALIDATED: true
           TEAM_ID: D56Z6846H3
@@ -501,10 +501,10 @@ jobs:
           rm -rf resign_work
           
           echo "✅ All components resigned successfully"
-        shell: bash
+        
 
-
-    - name: Strip Unresignable Extensions From Final IPA
+      
+      - name: Strip Unresignable Extensions From Final IPA
         id: strip_ipa
         run: |
           set -euo pipefail
@@ -582,7 +582,7 @@ jobs:
           name: uYouEnhanced_${{ env.YOUTUBE_VERSION }}_${{ env.UYOU_VERSION }}
           path: ${{ github.workspace }}/main/packages/${{ env.RENAMED_IPA || steps.strip_ipa.outputs.final_ipa }}
           if-no-files-found: error
-
+      
       - name: Create Release
         if: ${{ inputs.create_release }}
         id: create_release
