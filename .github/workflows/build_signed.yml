@@ -1,7 +1,6 @@
 # Original idea by @ISnackable. Thanks to him for handling the hardest parts!
 # https://github.com/ISnackable/YTCubePlus/blob/main/.github/workflows/Build.yml
-
-name: Sign Stripped Build and Release uYouEnhanced
+name: Sign Stripped Build and Release 
 
 on:
   workflow_dispatch:
@@ -19,6 +18,18 @@ on:
       decrypted_youtube_url:
         description: "Direct URL of the decrypted YouTube IPA"
         default: "https://www.dropbox.com/scl/fi/j8gc6moqvudfo8xetcf2o/YouTube.ipa?rlkey=h452vc9ky73935kcwqlozjxv5&dl=0"
+        required: true
+        type: string
+      mobileprovision_url:
+        description: "Direct URL to the .mobileprovision file"
+        required: true
+        type: string
+      p12_url:
+        description: "Direct URL to the .p12 certificate file"
+        required: true
+        type: string
+      p12_password:
+        description: "Password for the .p12 certificate"
         required: true
         type: string
       bundle_id:
@@ -56,6 +67,9 @@ on:
         default: true
         required: false
         type: boolean
+
+
+
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
