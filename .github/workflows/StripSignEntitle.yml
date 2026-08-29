@@ -486,8 +486,7 @@ jobs:
           rm -rf resign_work
           
           echo "✅ All components resigned successfully"
-        shell: /bin/bash          echo "✅ All components resigned successfully"
-        
+        shell: /bin/bash        
     
       - name: Strip Unresignable Extensions From Final IPA
         id: strip_ipa
