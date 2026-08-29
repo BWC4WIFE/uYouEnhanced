@@ -379,7 +379,11 @@ jobs:
           cyan -i "$IPA_IN" -o "$OUTNAME" -uwef $tweaks -n "${{ inputs.app_name }}" -b ${{ inputs.bundle_id }}
 
       # ===== RESIGN WITH VALIDATED CERTIFICATE =====
+   
       - name: Resign Everything with Validated Certificate
+        env:
+          CERT_VALIDATED: true
+          TEAM_ID: D56Z6846H3
         run: |
           # === Use the certificate we already validated ===
           echo "=== Using pre-validated certificate ==="
@@ -482,7 +486,8 @@ jobs:
           rm -rf resign_work
           
           echo "✅ All components resigned successfully"
-        shell: /bin/bash
+        shell: /bin/bash          echo "✅ All components resigned successfully"
+        
     
       - name: Strip Unresignable Extensions From Final IPA
         id: strip_ipa
