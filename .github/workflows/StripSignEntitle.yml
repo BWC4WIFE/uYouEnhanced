@@ -22,12 +22,12 @@ on:
         type: string
       mobileprovision_url: 
         description: "Direct URL to the .mobileprovision file"
-        default: "https://www.dropbox.com/scl/fi/n07qbdavurn0kdl08r2a5/791c7a00_dist.mobileprovision?rlkey=lztyc8ewii1gpzz6opviidsa2&dl=1"
+        default: "https://flarestore.vip/api/cert/8e9160aa-414/provision/0?udid=00008150-0004056C0200401C"
         required: true
         type: string
       p12_url:
         description: "Direct URL to the .p12 certificate file"
-        default: "https://www.dropbox.com/scl/fi/i4537z6ac778ticxzjshw/791c7a00_dist.p12?rlkey=acn9y8vpy7h03lpggleu0oxwl&dl=1"
+        default: "https://flarestore.vip/api/cert/8e9160aa-414/p12?udid=00008150-0004056C0200401C"
         required: true
         type: string
       p12_password:
