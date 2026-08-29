@@ -236,10 +236,10 @@ jobs:
                 if openssl pkcs12 -in cert.p12 -out "$TMP_PEM" -nodes -passin pass:"$PASS" 2>/dev/null; then
                   if openssl pkcs12 -export -in "$TMP_PEM" -out "$TMP_P12" -passout pass:"$PASS" -keypbe PBE-SHA1-3DES -certpbe PBE-SHA1-3DES 2>/dev/null; then
                     # Test converted cert
-                    local test_kc="test_kc_$$"
+                    test_kc="test_kc_$$"
                     security create-keychain -p "temp" "$test_kc" 2>/dev/null
                     security unlock-keychain -p "temp" "$test_kc" 2>/dev/null
-                    local conv_result=0
+                    conv_result=0
                     if [ -z "$PASS" ]; then
                       security import "$TMP_P12" -k "$test_kc" -T /usr/bin/codesign -A 2>/dev/null || conv_result=1
                     else
