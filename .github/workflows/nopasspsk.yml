@@ -94,9 +94,9 @@ jobs:
 
           # 1. Download files WITH STRICT ERROR HANDLING
           echo "Downloading certificate and profile..."
-          # --fail: fail on 4xx/5xx. -L: follow redirects. --max-redirect=5. -q: quiet.
-          wget --fail -L --max-redirect=5 -q "${{ inputs.p12_url }}" -O cert.p12
-          wget --fail -L --max-redirect=5 -q "${{ inputs.mobileprovision_url }}" -O profile.mobileprovision
+          # -f / --fail: fail silently on 4xx/5xx. -L: follow redirects. -s: silent. -S: show errors. -o: output.
+          curl -fL -sS --max-redirs 5 -o cert.p12 "${{ inputs.p12_url }}"
+          curl -fL -sS --max-redirs 5 -o profile.mobileprovision "${{ inputs.mobileprovision_url }}"
 
           # 2. Verify downloads are non-empty
           [ -s cert.p12 ] || { echo "❌ cert.p12 is empty (download failed)"; exit 1; }
