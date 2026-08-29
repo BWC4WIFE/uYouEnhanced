@@ -18,7 +18,7 @@ on:
         type: string
       decrypted_youtube_url:
         description: "Direct URL of the decrypted YouTube IPA"
-        default: "http://129.146.117.243/YouTube.ipa"
+        default: "https://www.dropbox.com/scl/fi/j8gc6moqvudfo8xetcf2o/YouTube.ipa?rlkey=h452vc9ky73935kcwqlozjxv5&dl=0"
         required: true
         type: string
       bundle_id:
