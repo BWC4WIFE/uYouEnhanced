@@ -1,3 +1,7 @@
+# Original idea by @ISnackable. Thanks to him for handling the hardest parts!
+# https://github.com/ISnackable/YTCubePlus/blob/main/.github/workflows/Build.yml
+name:  GONE Sign Stripped Build and Release 
+
 on:
   workflow_dispatch:
     inputs:
@@ -47,7 +51,7 @@ on:
         type: string
       upload_artifact:
         description: "Upload IPA as artifact"
-        default: true
+        default: false
         required: false
         type: boolean
       create_release:
@@ -72,6 +76,7 @@ on:
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
+
 
 jobs:
   build:
