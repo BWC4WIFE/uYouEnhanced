@@ -404,26 +404,32 @@ jobs:
           PASSWORD=$(tr -d '\n\r' < cert_password.txt)
 
           # THE ULTIMATE FIX: 
-          # The macOS 'security' tool fails MAC verification because of P12 encryption.
-          # We convert the P12 to a PEM file (using the password), 
-          # then repack it into a P12 with NO PASSWORD.
-          # This bypasses the MAC verification error entirely.
-          echo "Stripping password from certificate for macOS compatibility..."
+          # The macOS 'security' tool fails MAC verification because of P12 encryption
+          # natively exported by modern OpenSSL. We convert the P12 to a PEM file, 
+          # then repack it into a P12 with a known dummy password and legacy encryption.
+          echo "Repacking certificate for macOS compatibility..."
           openssl pkcs12 -in cert.p12 -out temp.pem -nodes -passin pass:"$PASSWORD" 2>/dev/null
-          openssl pkcs12 -export -in temp.pem -out cert_fixed.p12 -passout pass: 2>/dev/null
+          
+          # 1. Use a dummy password instead of empty (macOS hates empty P12 passwords)
+          # 2. Use -legacy flag if available to stop OpenSSL 3 from using AES (which breaks macOS Keychain)
+          if openssl pkcs12 -help 2>&1 | grep -q "legacy"; then
+            openssl pkcs12 -export -in temp.pem -out cert_fixed.p12 -passout pass:"build123" -legacy 2>/dev/null
+          else
+            openssl pkcs12 -export -in temp.pem -out cert_fixed.p12 -passout pass:"build123" 2>/dev/null
+          fi
           rm -f temp.pem
 
           if [ -s "cert_fixed.p12" ]; then
-            echo "✅ Certificate converted to password-less format."
-            # Tell macOS the password is empty so it doesn't hang waiting for user input
-            security import cert_fixed.p12 -k build.keychain -P "" -T /usr/bin/codesign -A
-          
+            echo "✅ Certificate repacked to macOS-compatible format."
+            # Import using our new dummy password
+            security import cert_fixed.p12 -k build.keychain -P "build123" -T /usr/bin/codesign -A
           else
             echo "❌ Conversion failed, attempting original"
             security import cert.p12 -k build.keychain -P "$PASSWORD" -T /usr/bin/codesign -A
           fi
           
           security set-key-partition-list -S apple-tool:,apple: -s -k temp123 build.keychain
+          
           
           # === Find the certificate identity ===
           echo "=== Finding certificate ==="
